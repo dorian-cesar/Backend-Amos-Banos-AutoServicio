@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tester Backend POS</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .form-group {
+            margin-bottom: 10px;
+        }
+
+        label {
+            display: inline-block;
+            width: 120px;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            padding: 5px;
+            width: 150px;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .connected {
+            background-color: #2ecc71;
+            color: white;
+        }
+
+        .disconnected {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        .log-container {
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #fafafa;
+            margin-bottom: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+
+        #ports-list {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 3px;
+        }
+
+        .port-item {
+            padding: 5px;
+            cursor: pointer;
+        }
+
+        .port-item:hover {
+            background-color: #eee;
+        }
+    </style>
+    <script src="https://code.jquery.com/jquery-1.12.4.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Transbank POS Tester</h1>
+
+        <div class="panel">
+            <h2>Conexión POS</h2>
+            <div class="status" id="connection-status">Desconectado</div>
+            <button id="list-ports">Listar Puertos</button>
+            <div id="ports-list"></div>
+            <div class="form-group">
+                <label for="port-path">Puerto:</label>
+                <input type="text" id="port-path" placeholder="Ej: /dev/ttyACM0">
+                <button id="connect-port">Conectar</button>
+            </div>
+            <button id="load-keys">Cargar Llaves</button>
+            <button id="disconnect">Desconectar</button>
+            <button id="get-status">Obtener Estado</button>
+        </div>
+
+        <div class="panel">
+            <h2>Operaciones</h2>
+            <div class="form-group">
+                <label for="amount">Monto:</label>
+                <input type="number" id="amount" placeholder="1000">
+            </div>
+            <div class="form-group">
+                <label for="ticket">N° Ticket/Boleta:</label>
+                <input type="text" id="ticket" placeholder="123456">
+            </div>
+            <button id="process-payment">Procesar Pago</button>
+            <div class="form-group">
+                <label for="operation-number">N° Operación:</label>
+                <input type="text" id="operation-number">
+                <button id="process-refund">Reversar</button>
+            </div>
+            <button id="close-day">Cierre Diario</button>
+            <button id="get-last-tx">Última Transacción</button>
+        </div>
+
+        <div class="panel">
+            <h2>Log de Operaciones</h2>
+            <div id="operation-log" class="log-container"></div>
+            <button id="clear-log">Limpiar Log</button>
+        </div>
+    </div>
+
+    <script>
+        // Configuración base
+        const base = window.location.origin
+        const API_BASE_URL = `${base}/api`;
+        let currentPort = null;
+
+        // Helper para llamadas API
+        function callAPI(endpoint, method, data, callback) {
+            const url = API_BASE_URL + endpoint;
+
+            $.ajax({
+                url: url,
+                type: method,
+                contentType: 'application/json',
+                data: method === 'GET' ? data : JSON.stringify(data),
+                dataType: 'json',
+                success: function (response) {
+                    logResponse(response);
+                    if (callback) callback(null, response);
+                },
+                error: function (xhr, status, error) {
+                    const err = {
+                        status: xhr.status,
+                        message: error,
+                        response: xhr.responseJSON || xhr.responseText
+                    };
+                    logError(err);
+                    if (callback) callback(err);
+                }
+            });
+        }
+
+        // Helpers para el log
+        function logResponse(response) {
+            const logElement = $('#operation-log');
+            const timestamp = new Date().toLocaleTimeString();
+
+            let logEntry = `[${timestamp}] Respuesta:\n`;
+            logEntry += JSON.stringify(response, null, 2) + '\n\n';
+
+            logElement.append(logEntry);
+            logElement.scrollTop(logElement[0].scrollHeight);
+        }
+
+        function logError(error) {
+            const logElement = $('#operation-log');
+            const timestamp = new Date().toLocaleTimeString();
+
+            let logEntry = `[${timestamp}] Error (${error.status}): ${error.message}\n`;
+            if (error.response) {
+                logEntry += JSON.stringify(error.response, null, 2) + '\n';
+            }
+            logEntry += '\n';
+
+            logElement.append(logEntry);
+            logElement.scrollTop(logElement[0].scrollHeight);
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusElement = $('#connection-status');
+            statusElement.removeClass('connected disconnected');
+
+            if (connected) {
+                statusElement.addClass('connected').text('Conectado' + (currentPort ? ' a ' + currentPort : ''));
+            } else {
+                statusElement.addClass('disconnected').text('Desconectado');
+                currentPort = null;
+            }
+        }
+
+        // Event handlers
+        $(document).ready(function () {
+            // Verificar estado inicial
+            checkPOSStatus();
+
+            // Listar puertos
+            $('#list-ports').click(function () {
+                callAPI('/terminal/ports', 'GET', null, function (err, response) {
+                    if (err) return;
+
+                    const portsList = $('#ports-list');
+                    portsList.empty();
+
+                    if (response.data && response.data.length > 0) {
+                        response.data.forEach(function (port) {
+                            const portItem = $('<div class="port-item"></div>');
+                            portItem.text(port.path + ' - ' + (port.manufacturer || 'Desconocido'));
+                            portItem.click(function () {
+                                $('#port-path').val(port.path);
+                            });
+                            portsList.append(portItem);
+                        });
+                    } else {
+                        portsList.text('No se encontraron puertos disponibles');
+                    }
+                });
+            });
+
+            // Conectar a puerto
+            $('#connect-port').click(function () {
+                const portPath = $('#port-path').val();
+                if (!portPath) {
+                    alert('Por favor ingrese un puerto');
+                    return;
+                }
+
+                callAPI('/terminal/connect', 'POST', { portPath: portPath }, function (err, response) {
+                    if (!err && response.success) {
+                        currentPort = portPath;
+                        updateConnectionStatus(true);
+                    }
+                });
+            });
+
+            // Cargar llaves
+            $('#load-keys').click(function () {
+                callAPI('/terminal/loadKeys', 'POST', {}, function (err, response) {
+                    if (!err && response.success) {
+                        alert('Llaves cargadas correctamente');
+                    }
+                });
+            });
+
+            // Desconectar
+            $('#disconnect').click(function () {
+                callAPI('/terminal/release-port', 'POST', {}, function (err, response) {
+                    if (!err) {
+                        updateConnectionStatus(false);
+                    }
+                });
+            });
+
+            // Obtener estado
+            $('#get-status').click(function () {
+                checkPOSStatus();
+            });
+
+            // Procesar pago
+            $('#process-payment').click(function () {
+                const amount = $('#amount').val();
+                const ticket = $('#ticket').val();
+
+                if (!amount || isNaN(amount)) {
+                    alert('Ingrese un monto válido');
+                    return;
+                }
+
+                if (!ticket) {
+                    alert('Ingrese un número de ticket/boleta');
+                    return;
+                }
+
+                callAPI('/payment', 'POST', { amount: amount, ticketNumber: ticket }, function (err, response) {
+                    if (!err && response.data && response.data.operationNumber) {
+                        $('#operation-number').val(response.data.operationNumber);
+                    }
+                });
+            });
+
+            // Procesar reversa
+            $('#process-refund').click(function () {
+                const amount = $('#amount').val();
+                const operationNumber = $('#operation-number').val();
+
+                if (!amount || isNaN(amount)) {
+                    alert('Ingrese un monto válido');
+                    return;
+                }
+
+                if (!operationNumber) {
+                    alert('Ingrese un número de operación');
+                    return;
+                }
+
+                callAPI('/refund', 'POST', {
+                    amount: amount,
+                    originalOperationNumber: operationNumber
+                });
+            });
+
+            // Cierre diario
+            $('#close-day').click(function () {
+                if (!confirm('¿Está seguro que desea realizar el cierre diario?')) return;
+
+                callAPI('/terminal/cierre-diario', 'POST', {});
+            });
+
+            // Obtener última transacción
+            $('#get-last-tx').click(function () {
+                callAPI('/terminal/last-transaction', 'GET', {});
+            });
+
+            // Limpiar log
+            $('#clear-log').click(function () {
+                $('#operation-log').empty();
+            });
+        });
+
+        // Función para verificar estado del POS
+        function checkPOSStatus() {
+            callAPI('/terminal/status', 'GET', null, function (err, response) {
+                if (!err && response.data) {
+                    updateConnectionStatus(response.data.connected);
+                    if (response.data.connected && response.data.port) {
+                        currentPort = response.data.port;
+                        $('#port-path').val(currentPort);
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
