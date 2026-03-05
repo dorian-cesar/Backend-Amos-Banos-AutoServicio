@@ -3,6 +3,20 @@ var router = express.Router();
 var posController = require('../controllers/posController');
 const paymentController = require('../controllers/paymentController');
 
+const allowCors = (req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+};
+
+router.use(allowCors);
+
 router.get('/terminal/status', posController.getStatus);
 router.get('/terminal/ports', posController.listPorts);
 router.post('/terminal/connect', posController.connectPort);
