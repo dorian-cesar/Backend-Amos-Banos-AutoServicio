@@ -7,6 +7,8 @@ const routes = require("./routes/posRoutes");
 const transbankService = require("./services/transbankService");
 const posManager = require("./utils/posConnect")
 
+app.use(cors());
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
