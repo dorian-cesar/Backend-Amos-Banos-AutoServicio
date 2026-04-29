@@ -4,7 +4,7 @@ const fs = require('fs');
 const bodyParser = require('body-parser');
 const path = require('path');
 const os = require('os');
-const mysql = require('mysql2/promise'); // Recuerda: npm install mysql2
+const { Client } = require('pg'); // Cambiado: de mysql2 a pg
 require('dotenv').config();
 
 const routes = require("./routes/posRoutes");
@@ -16,13 +16,11 @@ const PORT = process.env.PORT || 3000;
 
 // --- FUNCIONES DE SOPORTE ---
 
-// Obtiene la IP local de la interfaz conectada al router
 function getNetworkIP() {
     const interfaces = os.networkInterfaces();
     let preferredIP = null;
 
     for (const name of Object.keys(interfaces)) {
-        // Ignorar interfaces de Loopback (127.0.0.1) y Virtuales (WSL/Docker/vEthernet)
         if (name.toLowerCase().includes('loopback') || 
             name.toLowerCase().includes('vbox') || 
             name.toLowerCase().includes('virtual') || 
@@ -32,9 +30,7 @@ function getNetworkIP() {
         }
 
         for (const iface of interfaces[name]) {
-            // Buscamos IPv4 que no sea interna
             if (iface.family === 'IPv4' && !iface.internal) {
-                // Si encontramos una IP que empieza con 192 (típica de router), la devolvemos de inmediato
                 if (iface.address.startsWith('192.168.')) {
                     return iface.address;
                 }
@@ -45,37 +41,39 @@ function getNetworkIP() {
     return preferredIP || '127.0.0.1';
 }
 
-// Registra o actualiza la IP en la base de datos
+// Registra o actualiza la IP en la base de datos (POSTGRES VERSION)
 async function syncDeviceToDatabase(ip) {
-    let connection;
+    const client = new Client({
+        host: process.env.DB_HOST,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASS,
+        database: process.env.DB_NAME,
+        port: process.env.DB_PORT || 5432, // Puerto por defecto de Postgres
+    });
+
     try {
-        connection = await mysql.createConnection({
-            host: process.env.DB_HOST,
-            user: process.env.DB_USER,
-            password: process.env.DB_PASSWORD,
-            database: process.env.DB_NAME
-        });
+        await client.connect();
 
         const identificador = process.env.DB_IDENTIFICADOR;
         const ubicacion = process.env.DB_UBICACION;
 
-        // Buscamos si el dispositivo existe
-        const [rows] = await connection.execute(
-            'SELECT id FROM dispositivos WHERE identificador = ?', 
+        // Postgres usa $1, $2... en lugar de ?
+        const res = await client.query(
+            'SELECT id FROM bano_autoservicio.dispositivos WHERE identificador = $1', 
             [identificador]
         );
 
-        if (rows.length > 0) {
+        if (res.rows.length > 0) {
             // Actualizar
-            await connection.execute(
-                'UPDATE dispositivos SET ip = ?, ubicacion = ? WHERE identificador = ?',
+            await client.query(
+                'UPDATE bano_autoservicio.dispositivos SET ip = $1, ubicacion = $2 WHERE identificador = $3',
                 [ip, ubicacion, identificador]
             );
             console.log(`[DB]       Dispositivo '${identificador}' actualizado con IP: ${ip}`);
         } else {
             // Insertar nuevo
-            await connection.execute(
-                'INSERT INTO dispositivos (identificador, ubicacion, ip) VALUES (?, ?, ?)',
+            await client.query(
+                'INSERT INTO bano_autoservicio.dispositivos (identificador, ubicacion, ip) VALUES ($1, $2, $3)',
                 [identificador, ubicacion, ip]
             );
             console.log(`[DB]       Nuevo dispositivo '${identificador}' registrado con IP: ${ip}`);
@@ -84,7 +82,7 @@ async function syncDeviceToDatabase(ip) {
     } catch (error) {
         console.error('[DB]       Error en sincronización:', error.message);
     } finally {
-        if (connection) await connection.end();
+        await client.end();
     }
 }
 
@@ -113,7 +111,6 @@ https.createServer(sslOptions, app).listen(PORT, async function () {
     console.log('=============================================');
     console.log(`[SERVER]   IP RED LOCAL: ${localIP}`);
     
-    // Sincronizar con DB al arrancar
     await syncDeviceToDatabase(localIP);
     
     console.log(`[SERVER]   CORRIENDO EN: https://localhost:${PORT}`);
@@ -156,7 +153,6 @@ async function startPOSConnection() {
 
 setTimeout(startPOSConnection, 10000);
 
-// Manejo de cierre
 process.on('SIGINT', async () => {
     if (connectionMonitor) connectionMonitor.stop();
     console.log('');
