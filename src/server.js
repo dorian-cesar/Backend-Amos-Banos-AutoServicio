@@ -97,6 +97,10 @@ app.get('/', function (req, res) {
     res.sendFile(path.join(__dirname, 'public/index.html'));
 });
 
+app.get("/monitor", function (req, res) {
+  res.json({ success: true, server: true });
+});
+
 // --- INICIO DEL SERVIDOR ---
 
 const sslOptions = {
