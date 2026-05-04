@@ -55,13 +55,14 @@ function getNetworkIP() {
 }
 
 // Registra o actualiza la IP en la base de datos (POSTGRES VERSION)
+
 async function syncDeviceToDatabase(ip) {
     const client = new Client({
         host: process.env.DB_HOST,
         user: process.env.DB_USER,
         password: process.env.DB_PASS,
         database: process.env.DB_NAME,
-        port: process.env.DB_PORT || 5432, // Puerto por defecto de Postgres
+        port: process.env.DB_PORT || 5432,
     });
 
     try {
@@ -69,35 +70,36 @@ async function syncDeviceToDatabase(ip) {
 
         const identificador = process.env.DB_IDENTIFICADOR;
         const ubicacion = process.env.DB_UBICACION;
+        const ahora = new Date(); // Genera el timestamp actual
 
-        // Postgres usa $1, $2... en lugar de ?
         const res = await client.query(
             'SELECT id FROM bano_autoservicio.dispositivos WHERE identificador = $1', 
             [identificador]
         );
 
         if (res.rows.length > 0) {
-            // Actualizar
+            // Actualizar IP, ubicación y Timestamp
             await client.query(
-                'UPDATE bano_autoservicio.dispositivos SET ip = $1, ubicacion = $2 WHERE identificador = $3',
-                [ip, ubicacion, identificador]
+                'UPDATE bano_autoservicio.dispositivos SET ip = $1, ubicacion = $2, ultima_conexion = $3 WHERE identificador = $4',
+                [ip, ubicacion, ahora, identificador]
             );
-            console.log(`[DB]       Dispositivo '${identificador}' actualizado con IP: ${ip}`);
+            console.log(`[DB] Dispositivo '${identificador}' actualizado. IP: ${ip} a las ${ahora.toISOString()}`);
         } else {
-            // Insertar nuevo
+            // Insertar nuevo con Timestamp inicial
             await client.query(
-                'INSERT INTO bano_autoservicio.dispositivos (identificador, ubicacion, ip) VALUES ($1, $2, $3)',
-                [identificador, ubicacion, ip]
+                'INSERT INTO bano_autoservicio.dispositivos (identificador, ubicacion, ip, ultima_conexion) VALUES ($1, $2, $3, $4)',
+                [identificador, ubicacion, ip, ahora]
             );
-            console.log(`[DB]       Nuevo dispositivo '${identificador}' registrado con IP: ${ip}`);
+            console.log(`[DB] Nuevo dispositivo '${identificador}' registrado. IP: ${ip}`);
         }
 
     } catch (error) {
-        console.error('[DB]       Error en sincronización:', error.message);
+        console.error('[DB] Error en sincronización:', error.message);
     } finally {
         await client.end();
     }
 }
+
 
 // --- MIDDLEWARES Y RUTAS ---
 
