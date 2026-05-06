@@ -1,0 +1,28 @@
+{
+  "name": "backend-amos-banos-autoservicio",
+  "version": "1.0.0",
+  "description": "Este backend permite conectar y controlar un dispositivo `POS Transbank` en modo autoservicio, adaptado para hardware antiguo (Debian 8 y Node.js 10). Está diseñado para ejecutar operaciones como ventas, reversiones y monitoreo de estado del POS, garantizando reconexión automática y evitando bloqueos por operaciones simultáneas.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dorian-cesar/Backend-Amos-Banos-AutoServicio.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dorian-cesar/Backend-Amos-Banos-AutoServicio/issues"
+  },
+  "homepage": "https://github.com/dorian-cesar/Backend-Amos-Banos-AutoServicio#readme",
+  "dependencies": {
+    "body-parse": "^0.1.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mysql2": "^3.22.3",
+    "transbank-pos-sdk": "^4.0.0"
+  }
+}
